@@ -1,9 +1,3 @@
-/*********
-  Rui Santos
-  Complete project details at http://randomnerdtutorials.com  esp8266 philippines
-*********/
-// Cambiado por Ed Cañeda
-
 #include <ESP8266WiFi.h>
 
 // Credenciales Wi-Fi
