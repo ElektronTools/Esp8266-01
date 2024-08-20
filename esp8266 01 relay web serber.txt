@@ -1,0 +1,127 @@
+/*********
+  Rui Santos
+  Complete project details at http://randomnerdtutorials.com  esp8266 philippines
+*********/
+// Cambiado por Ed Cañeda
+
+#include <ESP8266WiFi.h>
+
+// Credenciales Wi-Fi
+const char* ssid     = "2505002_AP_2.4_341C4F";
+const char* password = "radioshack1234";
+
+// Configuración del servidor web en el puerto 80
+WiFiServer server(80);
+
+// Variable para almacenar la solicitud HTTP
+String header;
+
+// Variables auxiliares para almacenar el estado actual de la salida
+String relayState = "off";
+
+// Asignar el pin GPIO para el relé
+const int relayPin = 0;  //GPIO 2 en ESP-01
+
+// Tiempo actual y anterior
+unsigned long currentTime = millis();
+unsigned long previousTime = 0; 
+// Definir el tiempo de espera en milisegundos (ejemplo: 2000ms = 2s)
+const long timeoutTime = 2000;
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Inicializar el pin del relé como salida
+  pinMode(relayPin, OUTPUT);
+  
+  // Establecer la salida en LOW (relé apagado)
+  digitalWrite(relayPin, LOW);
+
+  // Conectar a la red Wi-Fi
+  Serial.print("Conectando a ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  // Imprimir la dirección IP local y comenzar el servidor web
+  Serial.println("");
+  Serial.println("WiFi conectado.");
+  Serial.println("Dirección IP: ");
+  Serial.println(WiFi.localIP());
+  server.begin();
+}
+
+void loop(){
+  WiFiClient client = server.available();   // Esperar a que un cliente se conecte
+
+  if (client) {                             // Si un nuevo cliente se conecta
+    Serial.println("Nuevo Cliente.");       // Imprimir un mensaje en el monitor serie
+    String currentLine = "";                // Crear un String para almacenar los datos entrantes del cliente
+    currentTime = millis();
+    previousTime = currentTime;
+    while (client.connected() && currentTime - previousTime <= timeoutTime) { // Bucle mientras el cliente esté conectado
+      currentTime = millis();         
+      if (client.available()) {             // Si hay bytes para leer del cliente
+        char c = client.read();             // Leer un byte
+        Serial.write(c);                    // Imprimirlo en el monitor serie
+        header += c;
+        if (c == '\n') {                    // Si el byte es un carácter de nueva línea
+          // Si la línea actual está vacía, significa que se recibieron dos caracteres de nueva línea seguidos.
+          // Es el final de la solicitud HTTP del cliente, por lo que se envía una respuesta:
+          if (currentLine.length() == 0) {
+            // Cabeceras HTTP: código de respuesta y tipo de contenido
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-type:text/html");
+            client.println("Connection: close");
+            client.println();
+            
+            // Encender o apagar el relé
+            if (header.indexOf("GET /relay/on") >= 0) {
+              Serial.println("Relé encendido");
+              relayState = "on";
+              digitalWrite(relayPin, HIGH);
+            } else if (header.indexOf("GET /relay/off") >= 0) {
+              Serial.println("Relé apagado");
+              relayState = "off";
+              digitalWrite(relayPin, LOW);
+            }
+            
+            // Mostrar la página web HTML
+            client.println("<!DOCTYPE html><html>");
+            client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+            client.println("<link rel=\"icon\" href=\"data:,\">");
+            client.println("<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}");
+            client.println(".button { background-color: #195B6A; border: none; color: white; padding: 16px 40px;");
+            client.println("text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}");
+            client.println(".button2 {background-color: #77878A;}</style></head>");
+            
+            client.println("<body><h1>Control del Relé ESP8266</h1>");
+            
+            // Mostrar el estado actual y los botones ON/OFF para el relé  
+            client.println("<p>Estado del Relé: " + relayState + "</p>");
+            if (relayState=="off") {
+              client.println("<p><a href=\"/relay/on\"><button class=\"button\">ENCENDER</button></a></p>");
+            } else {
+              client.println("<p><a href=\"/relay/off\"><button class=\"button button2\">APAGAR</button></a></p>");
+            }
+            client.println("</body></html>");
+            
+            client.println(); // Terminar la respuesta HTTP
+            break;
+          } else { // Si se recibe una nueva línea, limpiar la línea actual
+            currentLine = "";
+          }
+        } else if (c != '\r') {  // Si se recibe cualquier cosa excepto un retorno de carro
+          currentLine += c;      // Añadirlo al final de la línea actual
+        }
+      }
+    }
+    header = ""; // Limpiar la variable header
+    client.stop(); // Cerrar la conexión con el cliente
+    Serial.println("Cliente desconectado.");
+    Serial.println("");
+  }
+}
